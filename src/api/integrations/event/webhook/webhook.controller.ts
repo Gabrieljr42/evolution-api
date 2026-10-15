@@ -9,6 +9,7 @@ import axios, { AxiosInstance } from 'axios';
 import * as jwt from 'jsonwebtoken';
 
 import { EmitData, EventController, EventControllerInterface } from '../event.controller';
+import { persistedWebhookUrl } from './webhook.url';
 
 export class WebhookController extends EventController implements EventControllerInterface {
   private readonly logger = new Logger('WebhookController');
@@ -37,7 +38,7 @@ export class WebhookController extends EventController implements EventControlle
       update: {
         enabled: data.webhook?.enabled,
         events: data.webhook?.events,
-        url: data.webhook?.url,
+        url: persistedWebhookUrl(data.webhook?.url),
         headers: data.webhook?.headers,
         webhookBase64: data.webhook.base64,
         webhookByEvents: data.webhook.byEvents,
@@ -46,7 +47,7 @@ export class WebhookController extends EventController implements EventControlle
         enabled: data.webhook?.enabled,
         events: data.webhook?.events,
         instanceId: this.monitor.waInstances[instanceName].instanceId,
-        url: data.webhook?.url,
+        url: persistedWebhookUrl(data.webhook?.url),
         headers: data.webhook?.headers,
         webhookBase64: data.webhook.base64,
         webhookByEvents: data.webhook.byEvents,
