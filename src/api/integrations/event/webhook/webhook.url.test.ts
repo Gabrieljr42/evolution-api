@@ -25,6 +25,8 @@ const invalidUrls = [
   'https://?token=abc',
   'https://#fragment',
   'https:///hook',
+  'https://example.com:invalid/hook',
+  'https://[invalid]/hook',
   'https://example.com/hook with spaces',
   'https://example.com/hook\n',
   'https://example.com/hook\r\n',

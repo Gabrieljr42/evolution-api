@@ -1,15 +1,22 @@
 import type { JSONSchema7 } from 'json-schema';
+import { Validator } from 'jsonschema';
 
 export const WEBHOOK_HTTP_URL_PATTERN = '^[hH][tT][tT][pP][sS]?://[^\\s/?#]+\\S*(?![\\s\\S])';
 
+const webhookUrlPattern = new RegExp(WEBHOOK_HTTP_URL_PATTERN);
+
+function isWebhookUrl(url: unknown): boolean {
+  return typeof url === 'string' && webhookUrlPattern.test(url) && URL.canParse(url);
+}
+
+Validator.prototype.customFormats['webhook-url'] = isWebhookUrl;
+
 export const webhookUrlSchema: JSONSchema7 = {
   type: 'string',
-  format: 'uri',
+  format: 'webhook-url',
   pattern: WEBHOOK_HTTP_URL_PATTERN,
   description: 'The "url" must be a valid http or https URL without whitespace',
 };
-
-const webhookUrlPattern = new RegExp(WEBHOOK_HTTP_URL_PATTERN);
 
 export function persistedWebhookUrl(url: string | undefined): string | undefined {
   if (typeof url !== 'string') {
@@ -17,7 +24,7 @@ export function persistedWebhookUrl(url: string | undefined): string | undefined
   }
 
   const trimmedUrl = url.trim();
-  if (!webhookUrlPattern.test(trimmedUrl) || !URL.canParse(trimmedUrl)) {
+  if (!isWebhookUrl(trimmedUrl)) {
     throw {
       status: 400,
       error: 'Bad Request',
