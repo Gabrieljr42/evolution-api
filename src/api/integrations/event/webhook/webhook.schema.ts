@@ -2,7 +2,7 @@ import { JSONSchema7 } from 'json-schema';
 import { v4 } from 'uuid';
 
 import { EventController } from '../event.controller';
-import { WEBHOOK_HTTP_URL_PATTERN } from './webhook.url';
+import { webhookUrlSchema } from './webhook.url';
 
 const isNotEmpty = (...propertyNames: string[]): JSONSchema7 => {
   const properties = {};
@@ -31,11 +31,7 @@ export const webhookSchema: JSONSchema7 = {
       type: 'object',
       properties: {
         enabled: { type: 'boolean' },
-        url: {
-          type: 'string',
-          pattern: WEBHOOK_HTTP_URL_PATTERN,
-          description: 'The "url" must be an http or https URL without whitespace',
-        },
+        url: webhookUrlSchema,
         headers: { type: 'object' },
         byEvents: { type: 'boolean' },
         base64: { type: 'boolean' },

@@ -1,25 +1,89 @@
 import assert from 'node:assert/strict';
+import { mock, test } from 'node:test';
 
+import type { PrismaRepository } from '@api/repository/repository.service';
+import type { WAMonitoringService } from '@api/services/monitor.service';
+import type { Prisma } from '@prisma/client';
+import { instanceSchema } from '@validate/instance.schema';
 import { validate } from 'jsonschema';
 
+import { WebhookController } from './webhook.controller';
 import { webhookSchema } from './webhook.schema';
-import { persistedWebhookUrl } from './webhook.url';
 
-const padded = { webhook: { enabled: true, url: '  https://example.com/hook  ' } };
-const paddedResult = validate(padded, webhookSchema);
-assert.equal(paddedResult.valid, false, 'whitespace-padded URL must be rejected');
-console.log('whitespace-padded URL rejected');
+const validUrls = [
+  'https://example.com/hook',
+  'http://localhost:8080/hook',
+  'https://[::1]:8443/hook?token=abc',
+  'HTTPS://example.com/hook',
+  'hTtPs://example.com/hook',
+];
 
-const ftp = { webhook: { enabled: true, url: 'ftp://example.com/hook' } };
-const ftpResult = validate(ftp, webhookSchema);
-assert.equal(ftpResult.valid, false, 'URL without http/https must be rejected');
-console.log('URL without http/https rejected');
+const invalidUrls = [
+  '  https://example.com/hook  ',
+  'ftp://example.com/hook',
+  'https://',
+  'https://?token=abc',
+  'https://#fragment',
+  'https:///hook',
+  'https://example.com/hook with spaces',
+  'https://example.com/hook\n',
+  'https://example.com/hook\r\n',
+];
 
-const https = { webhook: { enabled: true, url: 'https://example.com/hook' } };
-const httpsResult = validate(https, webhookSchema);
-assert.equal(httpsResult.valid, true, 'normal https:// URL must be accepted');
-console.log('normal https:// URL accepted');
+for (const [name, schema] of [
+  ['webhook settings', webhookSchema],
+  ['instance creation', instanceSchema],
+] as const) {
+  test(`${name} accepts valid HTTP(S) URLs`, () => {
+    for (const url of validUrls) {
+      assert.equal(validate({ webhook: { enabled: true, url } }, schema).valid, true, url);
+    }
+  });
 
-const persisted = persistedWebhookUrl('  https://example.com/hook  ');
-assert.equal(persisted, 'https://example.com/hook');
-console.log('persisted value is trimmed', persisted);
+  test(`${name} rejects invalid webhook URLs`, () => {
+    for (const url of invalidUrls) {
+      assert.equal(validate({ webhook: { enabled: true, url } }, schema).valid, false, JSON.stringify(url));
+    }
+  });
+}
+
+test('instance creation only requires a URL when webhook settings are supplied', () => {
+  assert.equal(validate({ instanceName: 'test-instance' }, instanceSchema).valid, true);
+  assert.equal(validate({ instanceName: 'test-instance', webhook: {} }, instanceSchema).valid, false);
+});
+
+test('controller persists trimmed URLs on both create and update', async () => {
+  const upsert = mock.fn(async (args: Prisma.WebhookUpsertArgs) => args.create);
+  const prisma = { webhook: { upsert } } as unknown as PrismaRepository;
+  const monitor = {
+    waInstances: { 'test-instance': { instanceId: 'test-instance-id' } },
+  } as unknown as WAMonitoringService;
+  const controller = new WebhookController(prisma, monitor);
+
+  await controller.set('test-instance', {
+    webhook: { enabled: true, events: [], url: '  HTTPS://example.com/hook  ' },
+  });
+
+  assert.equal(upsert.mock.callCount(), 1);
+  const persisted = upsert.mock.calls[0].arguments[0];
+  assert.equal(persisted.where.instanceId, 'test-instance-id');
+  assert.equal(persisted.create.url, 'https://example.com/hook');
+  assert.equal(persisted.update.url, 'https://example.com/hook');
+});
+
+test('controller rejects malformed URLs before persistence', async () => {
+  const upsert = mock.fn();
+  const controller = new WebhookController(
+    { webhook: { upsert } } as unknown as PrismaRepository,
+    {} as WAMonitoringService,
+  );
+
+  for (const url of ['https://?', 'https://example.com:invalid/hook', 'https://[invalid]/hook', 'ftp://example.com']) {
+    await assert.rejects(controller.set('test-instance', { webhook: { enabled: true, events: [], url } }), {
+      status: 400,
+      error: 'Bad Request',
+      message: ['The "url" must be a valid http or https URL'],
+    });
+  }
+  assert.equal(upsert.mock.callCount(), 0);
+});
